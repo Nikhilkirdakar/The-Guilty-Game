@@ -1,0 +1,126 @@
+// Declarative Jenkins pipeline for The Guilty Game automation suite.
+// Runs P0 then P1 locale suites + the functional flow, archives HTML reports
+// and failure screenshots as build artifacts, and publishes the HTML report.
+//
+// Prereqs on the Jenkins agent:
+//   * Python 3.9+ on PATH  (python3 / pip)
+//   * Google Chrome (or Chromium) installed — Selenium Manager pulls the driver
+//   * "HTML Publisher" plugin (for the publishHTML step; optional)
+
+pipeline {
+    agent any
+
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(name: 'BASE_URL', defaultValue: 'https://theguiltygame.com/',
+               description: 'Application under test')
+        choice(name: 'BROWSER', choices: ['chrome', 'firefox', 'edge'],
+               description: 'Browser to run against')
+        booleanParam(name: 'HEADLESS', defaultValue: true,
+               description: 'Run browser headless (required on most CI agents)')
+    }
+
+    environment {
+        VENV = '.venv'
+        // Consumed by config/settings.py
+        TGG_BASE_URL = "${params.BASE_URL}"
+        TGG_BROWSER  = "${params.BROWSER}"
+        TGG_HEADLESS = "${params.HEADLESS}"
+    }
+
+    stages {
+
+        stage('Clean Workspace') {
+            steps {
+                // Start every build from a pristine tree.
+                cleanWs()
+                checkout scm
+            }
+        }
+
+        stage('Setup Python Env') {
+            steps {
+                sh '''
+                    python3 -m venv ${VENV}
+                    . ${VENV}/bin/activate
+                    python -m pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Functional Flow') {
+            steps {
+                sh '''
+                    . ${VENV}/bin/activate
+                    pytest tests/test_functional_flow.py \
+                        -m functional \
+                        --browser=${TGG_BROWSER} --headless=${TGG_HEADLESS} \
+                        --base-url=${TGG_BASE_URL} \
+                        --html=reports/functional.html --self-contained-html \
+                        --junitxml=reports/functional-junit.xml
+                '''
+            }
+        }
+
+        stage('Localization P0') {
+            steps {
+                // P0 is launch-blocking — run it first, fail fast on regressions.
+                sh '''
+                    . ${VENV}/bin/activate
+                    pytest tests/test_localization.py \
+                        -m p0 -n auto \
+                        --browser=${TGG_BROWSER} --headless=${TGG_HEADLESS} \
+                        --base-url=${TGG_BASE_URL} \
+                        --html=reports/localization-p0.html --self-contained-html \
+                        --junitxml=reports/localization-p0-junit.xml
+                '''
+            }
+        }
+
+        stage('Localization P1') {
+            // Run P1 even if P0 failed, so we get full coverage per build.
+            steps {
+                sh '''
+                    . ${VENV}/bin/activate
+                    pytest tests/test_localization.py \
+                        -m p1 -n auto \
+                        --browser=${TGG_BROWSER} --headless=${TGG_HEADLESS} \
+                        --base-url=${TGG_BASE_URL} \
+                        --html=reports/localization-p1.html --self-contained-html \
+                        --junitxml=reports/localization-p1-junit.xml
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            // Publish JUnit results for trend graphs.
+            junit allowEmptyResults: true, testResults: 'reports/*-junit.xml'
+
+            // Archive HTML reports + failure screenshots as build artifacts.
+            archiveArtifacts artifacts: 'reports/**/*.html, reports/screenshots/**/*.png',
+                             allowEmptyArchive: true, fingerprint: true
+
+            // Publish the combined HTML report in the Jenkins UI (needs HTML Publisher).
+            publishHTML(target: [
+                allowMissing         : true,
+                alwaysLinkToLastBuild: true,
+                keepAll              : true,
+                reportDir            : 'reports',
+                reportFiles          : 'functional.html, localization-p0.html, localization-p1.html',
+                reportName           : 'Guilty Game Test Reports'
+            ])
+        }
+        cleanup {
+            // Free disk on the agent between builds.
+            sh 'rm -rf ${VENV} || true'
+        }
+    }
+}

@@ -1,0 +1,17 @@
+# --- Core automation stack ---
+selenium==4.27.1            # Selenium Manager auto-resolves drivers (>=4.6)
+pytest==8.3.4              # test runner
+pytest-html==4.1.1        # rich self-contained HTML reports
+pytest-metadata==3.1.1    # env metadata block in the HTML report
+
+# --- Parallel execution (optional but recommended for 25 locales) ---
+pytest-xdist==3.6.1       # run with -n auto to parallelise locale tests
+
+# --- Stability / retries (optional) ---
+pytest-rerunfailures==15.0  # auto-retry flaky tests: --reruns 2
+
+# --- Driver fallback (only if you disable Selenium Manager) ---
+webdriver-manager==4.0.2
+
+# --- Secrets: load credentials from a gitignored .env (never hardcode) ---
+python-dotenv==1.0.1

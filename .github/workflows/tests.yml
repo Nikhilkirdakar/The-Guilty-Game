@@ -1,0 +1,57 @@
+name: e2e-tests
+
+# Runs the functional + localization suites on every push/PR, plus a nightly run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"   # nightly 03:00 UTC
+  workflow_dispatch: {}    # allow manual runs from the Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Chrome is preinstalled on ubuntu-latest runners; Selenium Manager
+      # resolves the matching driver automatically.
+      - name: Functional flow
+        run: pytest tests/test_functional_flow.py -m functional
+             --headless=true
+             --html=reports/functional.html --self-contained-html
+             --junitxml=reports/functional-junit.xml
+
+      - name: Localization P0
+        run: pytest tests/test_localization.py -m p0 -n auto
+             --headless=true
+             --html=reports/localization-p0.html --self-contained-html
+             --junitxml=reports/localization-p0-junit.xml
+
+      - name: Localization P1
+        if: always()   # run P1 even if P0 failed, for full coverage
+        run: pytest tests/test_localization.py -m p1 -n auto
+             --headless=true
+             --html=reports/localization-p1.html --self-contained-html
+             --junitxml=reports/localization-p1-junit.xml
+
+      - name: Upload reports & screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            reports/**/*.html
+            reports/screenshots/**/*.png
+          if-no-files-found: warn

@@ -32,6 +32,8 @@ ENV/
 .cache/
 .coverage
 htmlcov/
+# Test run logs
+test_run.log
 
 # ------------------------------------------------------------------ #
 # Test artifacts (reports + screenshots) — keep the folder, not contents
@@ -48,6 +50,8 @@ reports/screenshots/*
 geckodriver.log
 chromedriver*
 drivers/
+# webdriver-manager cache (auto-downloaded drivers)
+.wdm/
 
 # ------------------------------------------------------------------ #
 # Inspector script outputs (generated DOM dumps)
